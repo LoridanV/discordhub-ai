@@ -1,0 +1,258 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  discordId     String    @unique
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  discriminator String?
+  banner        String?
+  accentColor   Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts        Account[]
+  sessions        Session[]
+  servers         ServerUser[]
+  subscription    Subscription?
+  tickets         Ticket[]       @relation("TicketCreator")
+  assignedTickets Ticket[]       @relation("TicketAssignee")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Server {
+  id          String   @id @default(cuid())
+  discordId   String   @unique
+  name        String
+  icon        String?
+  banner      String?
+  description String?
+  memberCount Int      @default(0)
+  ownerId     String
+  features    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users          ServerUser[]
+  tickets        Ticket[]
+  moderationLogs ModerationLog[]
+  analytics      Analytics[]
+  settings       ServerSettings?
+  subscription   Subscription?
+}
+
+model ServerUser {
+  id          String   @id @default(cuid())
+  userId      String
+  serverId    String
+  roles       String?
+  permissions String
+  joinedAt    DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, serverId])
+}
+
+model Ticket {
+  id           String         @id @default(cuid())
+  ticketId     String         @unique
+  serverId     String
+  creatorId    String
+  assigneeId   String?
+  title        String
+  description  String         @db.Text
+  category     TicketCategory
+  priority     TicketPriority @default(MEDIUM)
+  status       TicketStatus   @default(OPEN)
+  tags         String?
+  closedAt     DateTime?
+  closedReason String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  server   Server          @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  creator  User            @relation("TicketCreator", fields: [creatorId], references: [id])
+  assignee User?           @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  messages TicketMessage[]
+}
+
+model TicketMessage {
+  id          String   @id @default(cuid())
+  ticketId    String
+  authorId    String
+  content     String   @db.Text
+  isStaff     Boolean  @default(false)
+  attachments String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+model ModerationLog {
+  id          String           @id @default(cuid())
+  serverId    String
+  targetId    String
+  targetName  String
+  action      ModerationAction
+  reason      String?
+  content     String?          @db.Text
+  severity    Float            @default(0)
+  aiDetected  Boolean          @default(false)
+  aiCategory  String?
+  moderatorId String?
+  duration    Int?
+  expiresAt   DateTime?
+  createdAt   DateTime         @default(now())
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+}
+
+model Analytics {
+  id                String   @id @default(cuid())
+  serverId          String
+  date              DateTime @db.Date
+  activeMembers     Int      @default(0)
+  newMembers        Int      @default(0)
+  leftMembers       Int      @default(0)
+  messageCount      Int      @default(0)
+  voiceMinutes      Int      @default(0)
+  ticketsOpened     Int      @default(0)
+  ticketsClosed     Int      @default(0)
+  moderationActions Int      @default(0)
+  channelBreakdown  String?
+  createdAt         DateTime @default(now())
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, date])
+}
+
+model ServerSettings {
+  id                   String   @id @default(cuid())
+  serverId             String   @unique
+  aiModerationEnabled  Boolean  @default(true)
+  toxicityThreshold    Float    @default(0.7)
+  spamThreshold        Float    @default(0.8)
+  scamThreshold        Float    @default(0.9)
+  autoWarn             Boolean  @default(true)
+  autoTimeout          Boolean  @default(false)
+  autoDelete           Boolean  @default(true)
+  logChannelId         String?
+  moderatorRoles       String?
+  ticketsEnabled       Boolean  @default(true)
+  ticketChannelId      String?
+  ticketCategories     String?
+  notificationsEnabled Boolean  @default(true)
+  analyticsEnabled     Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+}
+
+model Subscription {
+  id                 String    @id @default(cuid())
+  userId             String?   @unique
+  serverId           String?   @unique
+  plan               Plan      @default(FREE)
+  status             SubStatus @default(ACTIVE)
+  stripeId           String?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user   User?   @relation(fields: [userId], references: [id])
+  server Server? @relation(fields: [serverId], references: [id])
+}
+
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum SubStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  TRIALING
+}
+
+enum TicketCategory {
+  SUPPORT
+  BUG_REPORT
+  FEATURE_REQUEST
+  APPEAL
+  BILLING
+  OTHER
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+  RESOLVED
+}
+
+enum ModerationAction {
+  WARN
+  TIMEOUT
+  KICK
+  BAN
+  MESSAGE_DELETE
+  MUTE
+}
